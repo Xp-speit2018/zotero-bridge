@@ -1,14 +1,18 @@
 # zotero-bridge
 
+[![PyPI](https://img.shields.io/pypi/v/zotero-bridge)](https://pypi.org/project/zotero-bridge/)
+[![Python](https://img.shields.io/pypi/pyversions/zotero-bridge)](https://pypi.org/project/zotero-bridge/)
+[![License](https://img.shields.io/pypi/l/zotero-bridge)](LICENSE)
+
 Python SDK for the [Zotero debug-bridge](https://github.com/retorquere/zotero-better-bibtex/tree/master/test/fixtures/debug-bridge) — programmatically manage your Zotero library via HTTP.
 
 ## Install
 
 ```bash
-pip install git+https://github.com/Xp-speit2018/zotero-bridge.git
+pip install zotero-bridge
 ```
 
-Or editable for development:
+Or from source:
 
 ```bash
 git clone https://github.com/Xp-speit2018/zotero-bridge.git
@@ -125,6 +129,19 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 - Python ≥ 3.10
 - A running Zotero instance with the [debug-bridge extension](https://github.com/retorquere/zotero-better-bibtex/releases/tag/debug-bridge) installed
+
+## Releases
+
+| Version | Date | PyPI | Notes |
+|---------|------|------|-------|
+| 0.1.0 | 2025-05-18 | [zotero-bridge-0.1.0](https://pypi.org/project/zotero-bridge/0.1.0/) | Initial release |
+
+Publishing is automated via [GitHub Actions](.github/workflows/publish.yml) and [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/). To release a new version:
+
+1. Bump `version` in `pyproject.toml` and `zotero_bridge/__init__.py`
+2. Commit and push
+3. Create a GitHub Release with a new tag (e.g. `v0.2.0`)
+4. The workflow builds and uploads to PyPI automatically
 
 ## Acknowledgements
 
