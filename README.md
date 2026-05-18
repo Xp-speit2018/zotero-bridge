@@ -124,6 +124,10 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 - Python ≥ 3.10
 - A running Zotero instance with the [debug-bridge extension](https://github.com/retorquere/zotero-better-bibtex/releases/tag/debug-bridge) installed
 
+## Acknowledgements
+
+This SDK is built on top of the **Zotero debug-bridge** extension by [Emile Sonneveld](https://github.com/retorquere) / [iris-advies.com](https://github.com/retorquere/zotero-better-bibtex/tree/master/test/fixtures/debug-bridge), originally distributed as part of the [zotero-better-bibtex](https://github.com/retorquere/zotero-better-bibtex) test fixtures. The debug-bridge enables arbitrary JavaScript execution inside a running Zotero instance via an authenticated HTTP endpoint, which is the foundation of everything this SDK does.
+
 ## License
 
 MIT
