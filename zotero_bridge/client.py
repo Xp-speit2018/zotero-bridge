@@ -66,6 +66,10 @@ class ZoteroBridge:
             "Content-Type": "text/plain",
         })
 
+        # Lazy import to avoid circular dependency
+        from .export import Exporter
+        self.export = Exporter(self)
+
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #

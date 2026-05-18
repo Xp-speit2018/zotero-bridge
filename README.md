@@ -116,6 +116,29 @@ Note that metadata and pdf collection uses the built-in magic wand and `Find Ful
 | `add_to_collection(item_id, collection_id)` | Alias / place item |
 | `remove_from_collection(item_id, collection_id)` | Remove from collection |
 
+### Export
+
+| Method | Description |
+|--------|-------------|
+| `export.item(item_id, format, options)` | Export a single item |
+| `export.items(item_ids, format, options)` | Export multiple items |
+| `export.collection(collection_id, format, options)` | Export a whole collection |
+| `export.library(format, options)` | Export the entire library |
+| `export.list_formats()` | List available export formats |
+
+**Supported formats:** `better-bibtex`, `better-biblatex`, `bibtex`, `biblatex`, `ris`, `csl-json`, `csv`, `zotero-rdf`, `tei`, `cff`.
+
+```python
+# Better BibTeX with notes
+bib = bridge.export.item(item_id, format="better-bibtex", options={"exportNotes": True})
+
+# Full collection as RIS
+ris = bridge.export.collection(collection_id, format="ris")
+
+# Entire library
+bib = bridge.export.library(format="better-bibtex")
+```
+
 ## DBLP venue naming
 
 When the ingestion workflow auto-derives a venue name, it normalises to DBLP convention:
@@ -135,6 +158,7 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 | Version | Date | PyPI | Notes |
 |---------|------|------|-------|
+| 0.2.0 | 2025-05-18 | [zotero-bridge-0.2.0](https://pypi.org/project/zotero-bridge/0.2.0/) | Export support (BibTeX, RIS, CSL JSON, etc.) |
 | 0.1.0 | 2025-05-18 | [zotero-bridge-0.1.0](https://pypi.org/project/zotero-bridge/0.1.0/) | Initial release |
 
 Publishing is automated via [GitHub Actions](.github/workflows/publish.yml) and [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/). To release a new version:
