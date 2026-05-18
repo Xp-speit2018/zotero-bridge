@@ -5,10 +5,10 @@ Python SDK for the [Zotero debug-bridge](https://github.com/retorquere/zotero-be
 ## Install
 
 ```bash
-pip install zotero-bridge
+pip install git+https://github.com/Xp-speit2018/zotero-bridge.git
 ```
 
-Or from source:
+Or editable for development:
 
 ```bash
 git clone https://github.com/Xp-speit2018/zotero-bridge.git
