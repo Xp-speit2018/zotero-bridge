@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zotero-bridge"
-version = "0.2.0"
+version = "0.2.1"
 description = "Python SDK for Zotero debug-bridge"
 readme = "README.md"
 license = { text = "MIT" }
@@ -38,8 +38,8 @@ dev = [
 zotero-ingest = "zotero_bridge.ingest:main"
 
 [project.urls]
-Homepage = "https://github.com/zotero-bridge/zotero-bridge"
-Repository = "https://github.com/zotero-bridge/zotero-bridge"
+Homepage = "https://github.com/Xp-speit2018/zotero-bridge"
+Repository = "https://github.com/Xp-speit2018/zotero-bridge"
 
 [tool.hatch.build.targets.wheel]
 packages = ["zotero_bridge"]
