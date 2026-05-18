@@ -69,6 +69,8 @@ zotero-ingest --doi "10.1145/3597926.3598095" --project "MyResearch"
 zotero-ingest --doi "10.1145/3597926.3598095" --venue "ASPLOS" --project "MyResearch"
 ```
 
+Note that metadata and pdf collection uses the built-in magic wand and `Find Full Text` functionality, which maybe paywalled or not depending on your network.
+
 ## API overview
 
 ### Items
