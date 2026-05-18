@@ -162,12 +162,6 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 | 0.2.0 | 2025-05-18 | [zotero-bridge-0.2.0](https://pypi.org/project/zotero-bridge/0.2.0/) | Export support (BibTeX, RIS, CSL JSON, etc.) |
 | 0.1.0 | 2025-05-18 | [zotero-bridge-0.1.0](https://pypi.org/project/zotero-bridge/0.1.0/) | Initial release |
 
-Publishing is automated via [GitHub Actions](.github/workflows/publish.yml) and [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/). To release a new version:
-
-1. Bump `version` in `pyproject.toml` and `zotero_bridge/__init__.py`
-2. Commit and push
-3. Create a GitHub Release with a new tag (e.g. `v0.2.0`)
-4. The workflow builds and uploads to PyPI automatically
 
 ## Acknowledgements
 
