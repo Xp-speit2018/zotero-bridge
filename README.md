@@ -2,6 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/zotero-bridge)](https://pypi.org/project/zotero-bridge/)
 [![Python](https://img.shields.io/pypi/pyversions/zotero-bridge)](https://pypi.org/project/zotero-bridge/)
+[![CI](https://github.com/Xp-speit2018/zotero-bridge/actions/workflows/publish.yml/badge.svg)](https://github.com/Xp-speit2018/zotero-bridge/actions/workflows/publish.yml)
 [![License](https://img.shields.io/pypi/l/zotero-bridge)](LICENSE)
 
 Python SDK for the [Zotero debug-bridge](https://github.com/retorquere/zotero-better-bibtex/tree/master/test/fixtures/debug-bridge) — programmatically manage your Zotero library via HTTP.
