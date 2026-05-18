@@ -29,10 +29,10 @@ from zotero_bridge import ZoteroBridge
 bridge = ZoteroBridge()
 
 # Duplicate check
-dup = bridge.check_duplicate("10.1145/3597926.3598095", "DOI")
+dup = bridge.check_duplicate("10.1109/DAC63849.2025.11132862", "DOI")
 
 # Add by identifier (magic wand)
-item = bridge.add_by_identifier("10.1145/3597926.3598095", "DOI")
+item = bridge.add_by_identifier("10.1109/DAC63849.2025.11132862", "DOI")
 
 # Auto-fetch PDF
 bridge.find_fulltext(item["itemID"])
@@ -68,10 +68,10 @@ A ready-made pipeline that checks for duplicates, fetches metadata + PDF, create
 
 ```bash
 # Auto-derive venue from metadata
-zotero-ingest --doi "10.1145/3597926.3598095" --project "MyResearch"
+zotero-ingest --doi "10.1109/DAC63849.2025.11132862" --project "MyResearch"
 
 # Or specify venue explicitly (still normalised to DBLP convention)
-zotero-ingest --doi "10.1145/3597926.3598095" --venue "ASPLOS" --project "MyResearch"
+zotero-ingest --doi "10.1109/DAC63849.2025.11132862" --venue "ASPLOS" --project "MyResearch"
 ```
 
 Note that metadata and pdf collection uses the built-in magic wand and `Find Full Text` functionality, which maybe paywalled or not depending on your network.
