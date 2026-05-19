@@ -30,6 +30,7 @@ bridge = ZoteroBridge()
 
 # Lookup existing items
 lookup = bridge.lookup("10.1109/DAC63849.2025.11132862", "DOI", include_attachments=True)
+usenix = bridge.lookup("https://www.usenix.org/conference/osdi25/presentation/lou", "url")
 
 # Backward-compatible duplicate check
 dup = bridge.check_duplicate("10.1109/DAC63849.2025.11132862", "DOI")
@@ -71,6 +72,7 @@ Look up existing Zotero items and print JSON:
 
 ```bash
 zotero-lookup --doi "10.1109/DAC63849.2025.11132862" --attachments --notes
+zotero-lookup --paper-url "https://www.usenix.org/conference/osdi25/presentation/lou" --attachments
 zotero-lookup --title "Attention Is All You Need" --first
 ```
 
@@ -81,6 +83,7 @@ A ready-made pipeline that checks for duplicates, fetches metadata + PDF, create
 ```bash
 # Auto-derive venue from metadata
 zotero-ingest --doi "10.1109/DAC63849.2025.11132862" --project "MyResearch"
+zotero-ingest --paper-url "https://www.usenix.org/conference/osdi25/presentation/lou" --venue "OSDI 2025" --project "MyResearch"
 
 # Or specify venue explicitly (still normalised to DBLP convention)
 zotero-ingest --doi "10.1109/DAC63849.2025.11132862" --venue "ASPLOS" --project "MyResearch"
@@ -94,7 +97,7 @@ Note that metadata and pdf collection uses the built-in magic wand and `Find Ful
 
 | Method | Description |
 |--------|-------------|
-| `lookup(identifier, id_type, include_notes=False, include_attachments=False, first_only=False)` | Look up Zotero items by DOI / ISBN / arXiv / title |
+| `lookup(identifier, id_type, include_notes=False, include_attachments=False, first_only=False)` | Look up Zotero items by DOI / ISBN / arXiv / URL / title |
 | `check_duplicate(identifier, id_type)` | Backward-compatible first-match duplicate check |
 | `add_by_identifier(identifier, id_type)` | Magic wand ingest |
 | `find_fulltext(item_id)` | Auto-download PDF |
@@ -171,6 +174,7 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 | Version | Date | PyPI | Notes |
 |---------|------|------|-------|
+| 0.4.0 | 2026-05-19 | [zotero-bridge-0.4.0](https://pypi.org/project/zotero-bridge/0.4.0/) | URL lookup/ingest and USENIX paper fallback |
 | 0.3.0 | 2026-05-19 | [zotero-bridge-0.3.0](https://pypi.org/project/zotero-bridge/0.3.0/) | Public lookup API and `zotero-lookup` CLI |
 | 0.2.1 | 2025-05-18 | [zotero-bridge-0.2.1](https://pypi.org/project/zotero-bridge/0.2.1/) | Fix PyPI project links |
 | 0.2.0 | 2025-05-18 | [zotero-bridge-0.2.0](https://pypi.org/project/zotero-bridge/0.2.0/) | Export support (BibTeX, RIS, CSL JSON, etc.) |

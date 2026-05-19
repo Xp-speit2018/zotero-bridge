@@ -2,7 +2,7 @@
 
 Workflow:
     1. Agent finds an interesting paper.
-    2. Duplication check: Query the Zotero library (by DOI / arXiv ID / title).
+    2. Duplication check: Query the Zotero library (by DOI / arXiv ID / URL / title).
     3. If missing:
         - Call the magic wand to fetch high-quality metadata + PDF.
         - Create the venue-named collection if it doesn't exist.
@@ -74,7 +74,14 @@ def ingest(
         result["action"] = "created"
         print(f"[ingest] Created item (ID={item_id}, key={item_key})")
 
-        # 3. Fetch PDF
+
+    # 3. Fetch PDF when missing. This also covers URL-identified papers that
+    # already existed in Zotero but had only a webpage/biburl attachment.
+    existing_pdf = bridge.retrieve_pdf(item_id)
+    result["existing_pdf"] = existing_pdf
+    if existing_pdf:
+        print(f"[ingest] PDF already attached (attachmentID={existing_pdf.get('attachmentID')})")
+    else:
         print(f"[ingest] Attempting to retrieve PDF ...")
         ft = bridge.find_fulltext(item_id)
         result["fulltext_result"] = ft
@@ -123,12 +130,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--doi", help="DOI of the paper")
     parser.add_argument("--arxiv", help="arXiv ID of the paper")
     parser.add_argument("--isbn", help="ISBN of the paper/book")
+    parser.add_argument("--paper-url", help="Canonical paper URL")
     parser.add_argument("--title", help="Title to search (fallback)")
     parser.add_argument("--venue", help="Venue/collection name (optional; auto-derived from metadata if omitted)")
     parser.add_argument("--project", required=True, help="Project collection name")
     parser.add_argument(
         "--url",
         default=os.getenv("ZOTERO_BRIDGE_URL", "http://localhost:23120"),
+        help="Debug-bridge URL (deprecated alias for --bridge-url)",
+    )
+    parser.add_argument(
+        "--bridge-url",
+        default=None,
         help="Debug-bridge URL (default: $ZOTERO_BRIDGE_URL or http://localhost:23120)",
     )
     parser.add_argument(
@@ -145,12 +158,14 @@ def main(argv: list[str] | None = None) -> int:
         identifier, id_type = args.arxiv, "arXiv"
     elif args.isbn:
         identifier, id_type = args.isbn, "ISBN"
+    elif args.paper_url:
+        identifier, id_type = args.paper_url, "url"
     elif args.title:
         identifier, id_type = args.title, "title"
     else:
-        parser.error("Provide one of --doi, --arxiv, --isbn, or --title")
+        parser.error("Provide one of --doi, --arxiv, --isbn, --paper-url, or --title")
 
-    bridge = ZoteroBridge(base_url=args.url, token=args.token)
+    bridge = ZoteroBridge(base_url=args.bridge_url or args.url, token=args.token)
     try:
         result = ingest(
             bridge,

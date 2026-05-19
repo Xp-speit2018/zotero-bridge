@@ -59,6 +59,25 @@ class LookupTests(unittest.TestCase):
             {"include_notes": True, "include_attachments": True, "first_only": True},
         )])
 
+    def test_cli_maps_paper_url_to_url_lookup(self):
+        fake = FakeBridge({"found": False, "count": 0, "matches": []})
+        with patch("zotero_bridge.lookup.ZoteroBridge", return_value=fake):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = lookup_main([
+                    "--paper-url",
+                    "https://www.usenix.org/conference/osdi25/presentation/lou",
+                    "--attachments",
+                ])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue()), {"found": False, "count": 0, "matches": []})
+        self.assertEqual(fake.calls, [(
+            "https://www.usenix.org/conference/osdi25/presentation/lou",
+            "url",
+            {"include_notes": False, "include_attachments": True, "first_only": False},
+        )])
+
 
 if __name__ == "__main__":
     unittest.main()

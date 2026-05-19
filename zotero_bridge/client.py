@@ -114,9 +114,10 @@ class ZoteroBridge:
         include_attachments: bool = False,
         first_only: bool = False,
     ) -> dict[str, Any]:
-        """Look up existing Zotero items by DOI, ISBN, arXiv ID, or title.
+        """Look up existing Zotero items by DOI, ISBN, arXiv ID, title, or URL.
 
-        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``, ``"title"``.
+        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``,
+        ``"title"``, ``"url"``, and ``"paper-url"``.
 
         Returns a dict with ``found``, ``count``, and ``matches``. Each match contains
         item metadata and can optionally include child notes and attachment metadata.
@@ -128,6 +129,12 @@ class ZoteroBridge:
             condition_js = f's.addCondition("ISBN", "is", {json.dumps(identifier)});'
         elif id_type == "arxiv":
             # arXiv IDs may live in the URL or Extra field.
+            condition_js = (
+                f's.addCondition("url", "contains", {json.dumps(identifier)});\n'
+                f's.addCondition("extra", "contains", {json.dumps(identifier)});\n'
+                's.addCondition("joinMode", "any");'
+            )
+        elif id_type in {"url", "paper-url", "paper_url"}:
             condition_js = (
                 f's.addCondition("url", "contains", {json.dumps(identifier)});\n'
                 f's.addCondition("extra", "contains", {json.dumps(identifier)});\n'
@@ -250,7 +257,8 @@ return (async () => {{
     ) -> dict[str, Any]:
         """Check whether an item with the given identifier already exists.
 
-        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``, ``"title"``.
+        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``,
+        ``"title"``, ``"url"``, and ``"paper-url"``.
 
         Returns a dict such as ``{"found": True, "itemID": 12345}`` or
         ``{"found": False}``. This compatibility wrapper delegates to ``lookup()``.
@@ -279,7 +287,8 @@ return (async () => {{
         Uses ``Zotero.Translate.Search`` to fetch metadata, creates the item,
         optionally adds it to collections, and attempts to retrieve the PDF.
 
-        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``.
+        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``,
+        ``"url"``, and ``"paper-url"``.
 
         Returns a dict with ``status``, ``itemID``, ``key``, ``title``, etc.
         """
@@ -290,6 +299,8 @@ return (async () => {{
             search_obj = f'{{ ISBN: {json.dumps(identifier)} }}'
         elif id_type == "arxiv":
             search_obj = f'{{ arXiv: {json.dumps(identifier)} }}'
+        elif id_type in {"url", "paper-url", "paper_url"}:
+            return self.add_by_url(identifier, collection_ids=collection_ids)
         else:
             raise ValueError(f"Unsupported id_type for add: {id_type}")
 
@@ -337,6 +348,173 @@ return (async () => {{
         title: zItem.getField("title"),
         DOI: zItem.getField("DOI"),
     }};
+}})();
+"""
+        return self._exec(js)
+
+    def add_by_url(
+        self,
+        url: str,
+        collection_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
+        """Create an item from a canonical paper URL.
+
+        The primary path uses Zotero's web translators. If no translator can
+        save the item and the page exposes USENIX-style BibTeX, the method
+        falls back to parsing that BibTeX and importing the linked PDF.
+        """
+        collection_js = ""
+        if collection_ids:
+            cids = ",".join(str(cid) for cid in collection_ids)
+            collection_js = f"""
+    for (var cid of [{cids}]) {{
+        item.addToCollection(cid);
+    }}
+"""
+
+        js = f"""
+return (async () => {{
+    const pageURL = {json.dumps(url)};
+    const libraryID = {self._library_js()};
+
+    function absoluteURL(href) {{
+        try {{ return new URL(href, pageURL).href; }}
+        catch (e) {{ return href; }}
+    }}
+
+    async function fetchPage() {{
+        let resp = await Zotero.HTTP.request("GET", pageURL);
+        return resp.responseText || resp.response || "";
+    }}
+
+    async function tryWebTranslator(html) {{
+        try {{
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(html, "text/html");
+            doc = Zotero.HTTP.wrapDocument(doc, pageURL);
+            let translate = new Zotero.Translate.Web();
+            translate.setDocument(doc);
+            let translators = await translate.getTranslators();
+            if (!translators || !translators.length) {{
+                return null;
+            }}
+            translate.setTranslator(translators[0]);
+            let items = await translate.translate({{
+                libraryID: libraryID,
+                saveAttachments: true
+            }});
+            if (!items || !items.length) {{
+                return null;
+            }}
+            let item = items[0];
+            if (!item.id && item.saveTx) {{
+                await item.saveTx();
+            }}
+            {collection_js}
+            if (item.saveTx) await item.saveTx();
+            return {{
+                status: "success",
+                method: "web-translator",
+                itemID: item.id,
+                key: item.key,
+                title: item.getField ? item.getField("title") : item.title,
+                url: item.getField ? item.getField("url") : pageURL
+            }};
+        }}
+        catch (e) {{
+            return {{ status: "translator_failed", error: String(e) }};
+        }}
+    }}
+
+    function parseBibtexFields(bibtex) {{
+        let fields = {{}};
+        let re = /([A-Za-z][A-Za-z0-9_-]*)\\s*=\\s*([{{"])([\\s\\S]*?)(?:\\2\\s*,|\\2\\s*\\n?\\}}|\\}}\\s*,)/g;
+        let m;
+        while ((m = re.exec(bibtex)) !== null) {{
+            fields[m[1].toLowerCase()] = m[3].replace(/\\s+/g, " ").trim();
+        }}
+        return fields;
+    }}
+
+    function creatorFromName(name) {{
+        name = name.trim();
+        if (!name) return null;
+        if (name.includes(",")) {{
+            let parts = name.split(",");
+            return {{ firstName: parts.slice(1).join(",").trim(), lastName: parts[0].trim(), creatorType: "author" }};
+        }}
+        let parts = name.split(/\\s+/);
+        if (parts.length === 1) return {{ lastName: parts[0], creatorType: "author" }};
+        return {{ firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1], creatorType: "author" }};
+    }}
+
+    async function tryUsenixBibtex(html) {{
+        let bibMatch = html.match(/@inproceedings\\s*\\{{[\\s\\S]*?\\n\\}}/i);
+        if (!bibMatch) return null;
+        let fields = parseBibtexFields(bibMatch[0]);
+        if (!fields.title) return null;
+
+        let item = new Zotero.Item("conferencePaper");
+        item.libraryID = libraryID;
+        item.setField("title", fields.title);
+        item.setField("url", fields.url || pageURL);
+        item.setField("proceedingsTitle", fields.booktitle || "");
+        item.setField("conferenceName", fields.booktitle || "");
+        item.setField("date", fields.year || "");
+        item.setField("pages", fields.pages || "");
+        item.setField("ISBN", fields.isbn || "");
+        item.setField("place", fields.address || "");
+        item.setField("publisher", fields.publisher || "USENIX Association");
+        item.setField("extra", "USENIX: " + pageURL.replace(/^https?:\\/\\/www\\.usenix\\.org\\/conference\\//, ""));
+        if (fields.author) {{
+            let authors = fields.author.split(/\\s+and\\s+/i).map(creatorFromName).filter(Boolean);
+            for (let i = 0; i < authors.length; i++) {{
+                item.setCreator(i, authors[i]);
+            }}
+        }}
+        {collection_js}
+        await item.saveTx();
+
+        let pdfURL = null;
+        let pdfMatch = html.match(/href=["']([^"']+\\.pdf(?:\\?[^"']*)?)["']/i);
+        if (pdfMatch) {{
+            pdfURL = absoluteURL(pdfMatch[1]);
+            try {{
+                let att = await Zotero.Attachments.importFromURL({{
+                    libraryID: libraryID,
+                    url: pdfURL,
+                    parentItemID: item.id,
+                    title: "Full Text PDF",
+                    contentType: "application/pdf",
+                    referrer: pageURL,
+                    renameIfAllowedType: true
+                }});
+            }}
+            catch (e) {{
+                Zotero.logError(e);
+            }}
+        }}
+
+        return {{
+            status: "success",
+            method: "usenix-bibtex",
+            itemID: item.id,
+            key: item.key,
+            title: item.getField("title"),
+            url: item.getField("url"),
+            pdfURL: pdfURL
+        }};
+    }}
+
+    let html = await fetchPage();
+    let translated = await tryWebTranslator(html);
+    if (translated && translated.status === "success") return translated;
+    let fallback = await tryUsenixBibtex(html);
+    if (fallback) {{
+        fallback.translator_result = translated;
+        return fallback;
+    }}
+    return translated || {{ status: "not_found", url: pageURL }};
 }})();
 """
         return self._exec(js)
