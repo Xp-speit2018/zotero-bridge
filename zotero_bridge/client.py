@@ -102,20 +102,24 @@ class ZoteroBridge:
         return "Zotero.Libraries.userLibraryID"
 
     # ------------------------------------------------------------------ #
-    # Items – ingest & duplicate check
+    # Items – lookup, ingest & duplicate check
     # ------------------------------------------------------------------ #
 
-    def check_duplicate(
+    def lookup(
         self,
         identifier: str,
         id_type: str = "DOI",
+        *,
+        include_notes: bool = False,
+        include_attachments: bool = False,
+        first_only: bool = False,
     ) -> dict[str, Any]:
-        """Check whether an item with the given identifier already exists.
+        """Look up existing Zotero items by DOI, ISBN, arXiv ID, or title.
 
         Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``, ``"title"``.
 
-        Returns a dict such as ``{"found": True, "itemID": 12345}`` or
-        ``{"found": False}``.
+        Returns a dict with ``found``, ``count``, and ``matches``. Each match contains
+        item metadata and can optionally include child notes and attachment metadata.
         """
         id_type = id_type.lower()
         if id_type == "doi":
@@ -134,24 +138,135 @@ class ZoteroBridge:
         else:
             raise ValueError(f"Unsupported id_type: {id_type}")
 
+        first_only_js = "true" if first_only else "false"
+        include_notes_js = "true" if include_notes else "false"
+        include_attachments_js = "true" if include_attachments else "false"
+
         js = f"""
 return (async () => {{
     var s = new Zotero.Search();
     s.libraryID = {self._library_js()};
     {condition_js}
     var ids = await s.search();
-    if (ids.length === 0) return {{ found: false }};
-    var item = await Zotero.Items.getAsync(ids[0]);
+    if ({first_only_js}) ids = ids.slice(0, 1);
+
+    async function serializeItem(item) {{
+        var creators = [];
+        for (var i = 0; i < item.numCreators(); i++) {{
+            creators.push(item.getCreatorJSON(i));
+        }}
+
+        var notes = [];
+        if ({include_notes_js}) {{
+            var noteIDs = await item.getNotes();
+            for (var nid of noteIDs) {{
+                var n = await Zotero.Items.getAsync(nid);
+                if (!n) continue;
+                notes.push({{
+                    id: n.id,
+                    itemID: n.id,
+                    key: n.key,
+                    note: n.getNote(),
+                    dateAdded: n.dateAdded,
+                    dateModified: n.dateModified
+                }});
+            }}
+        }}
+
+        var attachments = [];
+        if ({include_attachments_js}) {{
+            var attIDs = await item.getAttachments();
+            for (var aid of attIDs) {{
+                var a = await Zotero.Items.getAsync(aid);
+                if (!a) continue;
+                var path = null;
+                try {{ path = a.getFilePath(); }} catch (e) {{ path = null; }}
+                attachments.push({{
+                    id: a.id,
+                    itemID: a.id,
+                    key: a.key,
+                    title: a.getField("title"),
+                    contentType: a.attachmentContentType,
+                    filename: a.attachmentFilename,
+                    path: path,
+                    isPDF: a.attachmentContentType === "application/pdf",
+                    dateAdded: a.dateAdded,
+                    dateModified: a.dateModified
+                }});
+            }}
+        }}
+
+        var result = {{
+            id: item.id,
+            itemID: item.id,
+            key: item.key,
+            libraryID: item.libraryID,
+            itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+            title: item.getField("title"),
+            date: item.getField("date"),
+            DOI: item.getField("DOI"),
+            ISBN: item.getField("ISBN"),
+            url: item.getField("url"),
+            publicationTitle: item.getField("publicationTitle"),
+            conferenceName: item.getField("conferenceName"),
+            proceedingsTitle: item.getField("proceedingsTitle"),
+            volume: item.getField("volume"),
+            issue: item.getField("issue"),
+            publisher: item.getField("publisher"),
+            place: item.getField("place"),
+            abstractNote: item.getField("abstractNote"),
+            extra: item.getField("extra"),
+            creators: creators,
+            tags: item.getTags().map(t => t.tag),
+            collections: item.getCollections(),
+            dateAdded: item.dateAdded,
+            dateModified: item.dateModified
+        }};
+        if ({include_notes_js}) result.notes = notes;
+        if ({include_attachments_js}) result.attachments = attachments;
+        return result;
+    }}
+
+    var matches = [];
+    for (var id of ids) {{
+        var item = await Zotero.Items.getAsync(id);
+        if (!item || !item.isRegularItem()) continue;
+        matches.push(await serializeItem(item));
+    }}
     return {{
-        found: true,
-        itemID: item.id,
-        key: item.key,
-        title: item.getField("title"),
-        DOI: item.getField("DOI"),
+        found: matches.length > 0,
+        count: matches.length,
+        query: {{ identifier: {json.dumps(identifier)}, id_type: {json.dumps(id_type)} }},
+        matches: matches
     }};
 }})();
 """
         return self._exec(js)
+
+    def check_duplicate(
+        self,
+        identifier: str,
+        id_type: str = "DOI",
+    ) -> dict[str, Any]:
+        """Check whether an item with the given identifier already exists.
+
+        Supported ``id_type`` values: ``"DOI"``, ``"ISBN"``, ``"arXiv"``, ``"title"``.
+
+        Returns a dict such as ``{"found": True, "itemID": 12345}`` or
+        ``{"found": False}``. This compatibility wrapper delegates to ``lookup()``.
+        """
+        result = self.lookup(identifier, id_type, first_only=True)
+        matches = result.get("matches") or []
+        if not matches:
+            return {"found": False}
+        item = matches[0]
+        return {
+            "found": True,
+            "itemID": item.get("itemID", item.get("id")),
+            "key": item.get("key"),
+            "title": item.get("title"),
+            "DOI": item.get("DOI"),
+        }
 
     def add_by_identifier(
         self,

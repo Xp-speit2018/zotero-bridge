@@ -28,7 +28,10 @@ from zotero_bridge import ZoteroBridge
 
 bridge = ZoteroBridge()
 
-# Duplicate check
+# Lookup existing items
+lookup = bridge.lookup("10.1109/DAC63849.2025.11132862", "DOI", include_attachments=True)
+
+# Backward-compatible duplicate check
 dup = bridge.check_duplicate("10.1109/DAC63849.2025.11132862", "DOI")
 
 # Add by identifier (magic wand)
@@ -62,6 +65,15 @@ ZOTERO_BRIDGE_URL=http://localhost:23120
 ZOTERO_BRIDGE_TOKEN=zotero-debug
 ```
 
+## CLI lookup
+
+Look up existing Zotero items and print JSON:
+
+```bash
+zotero-lookup --doi "10.1109/DAC63849.2025.11132862" --attachments --notes
+zotero-lookup --title "Attention Is All You Need" --first
+```
+
 ## CLI ingestion workflow
 
 A ready-made pipeline that checks for duplicates, fetches metadata + PDF, creates DBLP-style venue collections, and aliases items into a project collection:
@@ -82,7 +94,8 @@ Note that metadata and pdf collection uses the built-in magic wand and `Find Ful
 
 | Method | Description |
 |--------|-------------|
-| `check_duplicate(identifier, id_type)` | Query by DOI / ISBN / arXiv / title |
+| `lookup(identifier, id_type, include_notes=False, include_attachments=False, first_only=False)` | Look up Zotero items by DOI / ISBN / arXiv / title |
+| `check_duplicate(identifier, id_type)` | Backward-compatible first-match duplicate check |
 | `add_by_identifier(identifier, id_type)` | Magic wand ingest |
 | `find_fulltext(item_id)` | Auto-download PDF |
 | `get_item(item_id)` | Retrieve metadata |
@@ -158,6 +171,7 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 | Version | Date | PyPI | Notes |
 |---------|------|------|-------|
+| 0.3.0 | 2026-05-19 | [zotero-bridge-0.3.0](https://pypi.org/project/zotero-bridge/0.3.0/) | Public lookup API and `zotero-lookup` CLI |
 | 0.2.1 | 2025-05-18 | [zotero-bridge-0.2.1](https://pypi.org/project/zotero-bridge/0.2.1/) | Fix PyPI project links |
 | 0.2.0 | 2025-05-18 | [zotero-bridge-0.2.0](https://pypi.org/project/zotero-bridge/0.2.0/) | Export support (BibTeX, RIS, CSL JSON, etc.) |
 | 0.1.0 | 2025-05-18 | [zotero-bridge-0.1.0](https://pypi.org/project/zotero-bridge/0.1.0/) | Initial release |

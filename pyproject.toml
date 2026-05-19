@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zotero-bridge"
-version = "0.2.1"
+version = "0.3.0"
 description = "Python SDK for Zotero debug-bridge"
 readme = "README.md"
 license = { text = "MIT" }
@@ -32,10 +32,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "python-dotenv>=1.0.0",
+    "pytest>=8.0.0",
 ]
 
 [project.scripts]
 zotero-ingest = "zotero_bridge.ingest:main"
+zotero-lookup = "zotero_bridge.lookup:main"
 
 [project.urls]
 Homepage = "https://github.com/Xp-speit2018/zotero-bridge"
