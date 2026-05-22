@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import requests
@@ -532,8 +533,78 @@ return (async () => {{
         methods: ["doi", "url", "oa", "custom"]
     }});
     return attachment
-        ? {{ status: "success", attachmentID: attachment.id, title: attachment.getField("title") }}
+        ? {{ status: "success", method: "zotero-fulltext", attachmentID: attachment.id, title: attachment.getField("title") }}
         : {{ status: "failed" }};
+}})();
+"""
+        result = self._exec(js)
+        if result and result.get("status") == "success":
+            return result
+
+        arxiv_result = self.attach_arxiv_pdf(item_id)
+        if arxiv_result.get("status") == "success":
+            return arxiv_result
+        if result:
+            result["arxiv_fallback"] = arxiv_result
+        return result or arxiv_result
+
+    def attach_arxiv_pdf(self, item_id: int, arxiv_id: str | None = None) -> dict[str, Any]:
+        """Attach an arXiv PDF via the deterministic ``arxiv.org/pdf/<id>`` URL.
+
+        If ``arxiv_id`` is omitted, it is inferred from the item's DOI, URL, or
+        Extra field. This complements Zotero's generic "Find Available PDF"
+        path, which can miss arXiv DOI records such as
+        ``10.48550/arXiv.2503.17864``.
+        """
+        if arxiv_id is None:
+            item = self.get_item(item_id)
+            arxiv_id = _infer_arxiv_id_from_item(item or {})
+        else:
+            arxiv_id = _normalize_arxiv_id(arxiv_id)
+
+        if not arxiv_id:
+            return {"status": "failed", "method": "arxiv-pdf-url", "reason": "no_arxiv_id"}
+
+        pdf_url = _arxiv_pdf_url(arxiv_id)
+        js = f"""
+return (async () => {{
+    let item = await Zotero.Items.getAsync({item_id});
+    if (!item) return {{ status: "failed", method: "arxiv-pdf-url", reason: "item_not_found" }};
+    try {{
+        let attachment = await Zotero.Attachments.importFromURL({{
+            libraryID: item.libraryID,
+            url: {json.dumps(pdf_url)},
+            parentItemID: item.id,
+            title: "Full Text PDF",
+            contentType: "application/pdf",
+            renameIfAllowedType: true
+        }});
+        return attachment
+            ? {{
+                status: "success",
+                method: "arxiv-pdf-url",
+                attachmentID: attachment.id,
+                title: attachment.getField("title"),
+                arxivID: {json.dumps(arxiv_id)},
+                pdfURL: {json.dumps(pdf_url)}
+            }}
+            : {{
+                status: "failed",
+                method: "arxiv-pdf-url",
+                arxivID: {json.dumps(arxiv_id)},
+                pdfURL: {json.dumps(pdf_url)}
+            }};
+    }}
+    catch (e) {{
+        Zotero.logError(e);
+        return {{
+            status: "failed",
+            method: "arxiv-pdf-url",
+            arxivID: {json.dumps(arxiv_id)},
+            pdfURL: {json.dumps(pdf_url)},
+            error: String(e)
+        }};
+    }}
 }})();
 """
         return self._exec(js)
@@ -568,6 +639,7 @@ return (async () => {{
         publisher: item.getField("publisher"),
         place: item.getField("place"),
         abstractNote: item.getField("abstractNote"),
+        extra: item.getField("extra"),
         creators: creators,
         tags: item.getTags().map(t => t.tag),
         collections: item.getCollections(),
@@ -833,3 +905,35 @@ return (async () => {{
 }})();
 """
         return self._exec(js)
+
+
+_ARXIV_ID_RE = re.compile(
+    r"(?i)(?:arxiv:|arxiv\.|/abs/|/pdf/)?"
+    r"(?P<id>(?:[a-z-]+(?:\.[A-Z]{2})?/\d{7})|(?:\d{4}\.\d{4,5}))"
+    r"(?:v\d+)?(?:\.pdf)?"
+)
+
+
+def _normalize_arxiv_id(value: str | None) -> str | None:
+    """Return a canonical arXiv identifier from an ID, DOI, or arXiv URL."""
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    match = _ARXIV_ID_RE.search(text)
+    return match.group("id") if match else None
+
+
+def _infer_arxiv_id_from_item(item: dict[str, Any]) -> str | None:
+    """Infer an arXiv identifier from the Zotero item fields we commonly store."""
+    for field in ("DOI", "url", "extra"):
+        arxiv_id = _normalize_arxiv_id(item.get(field))
+        if arxiv_id:
+            return arxiv_id
+    return None
+
+
+def _arxiv_pdf_url(arxiv_id: str) -> str:
+    """Build the stable arXiv PDF URL for an identifier."""
+    return f"https://arxiv.org/pdf/{arxiv_id}"

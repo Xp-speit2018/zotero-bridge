@@ -119,7 +119,8 @@ Zotero client can import `collection.rdf` together with the adjacent files.
 | `lookup(identifier, id_type, include_notes=False, include_attachments=False, first_only=False)` | Look up Zotero items by DOI / ISBN / arXiv / URL / title |
 | `check_duplicate(identifier, id_type)` | Backward-compatible first-match duplicate check |
 | `add_by_identifier(identifier, id_type)` | Magic wand ingest |
-| `find_fulltext(item_id)` | Auto-download PDF |
+| `find_fulltext(item_id)` | Auto-download PDF, with deterministic arXiv PDF fallback |
+| `attach_arxiv_pdf(item_id, arxiv_id=None)` | Attach `https://arxiv.org/pdf/<id>` when an item has arXiv metadata |
 | `get_item(item_id)` | Retrieve metadata |
 | `delete_item(item_id)` | Trash an item |
 | `update_field(item_id, field, value)` | Update a single field |
@@ -202,6 +203,7 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 | Version | Date | PyPI | Notes |
 |---------|------|------|-------|
+| 0.5.1 | 2026-05-22 | [zotero-bridge-0.5.1](https://pypi.org/project/zotero-bridge/0.5.1/) | Add deterministic arXiv PDF attachment fallback for ingest/full-text lookup |
 | 0.5.0 | 2026-05-22 | [zotero-bridge-0.5.0](https://pypi.org/project/zotero-bridge/0.5.0/) | Collection package export with notes, fallback formats, attachments, and `zotero-export` CLI |
 | 0.4.0 | 2026-05-19 | [zotero-bridge-0.4.0](https://pypi.org/project/zotero-bridge/0.4.0/) | URL lookup/ingest and USENIX paper fallback |
 | 0.3.0 | 2026-05-19 | [zotero-bridge-0.3.0](https://pypi.org/project/zotero-bridge/0.3.0/) | Public lookup API and `zotero-lookup` CLI |
