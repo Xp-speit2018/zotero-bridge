@@ -91,6 +91,25 @@ zotero-ingest --doi "10.1109/DAC63849.2025.11132862" --venue "ASPLOS" --project 
 
 Note that metadata and pdf collection uses the built-in magic wand and `Find Full Text` functionality, which maybe paywalled or not depending on your network.
 
+## CLI collection export
+
+Export a collection into an importable directory or zip package:
+
+```bash
+zotero-export --collection "cxl-noob" --output cxl-noob-export --zip
+zotero-export --collection-id 37 --output cxl-noob-export.zip --zip --overwrite
+```
+
+The package includes:
+
+- `collection.rdf` with Zotero RDF metadata and child notes
+- `collection.bib` and `collection.ris` fallback exports
+- `attachments/` with copied attachment files when available
+- `manifest.json` with item and attachment metadata
+
+For Zotero RDF packages, copied attachment paths are added to the RDF so another
+Zotero client can import `collection.rdf` together with the adjacent files.
+
 ## API overview
 
 ### Items
@@ -139,6 +158,7 @@ Note that metadata and pdf collection uses the built-in magic wand and `Find Ful
 | `export.item(item_id, format, options)` | Export a single item |
 | `export.items(item_ids, format, options)` | Export multiple items |
 | `export.collection(collection_id, format, options)` | Export a whole collection |
+| `export.collection_package(collection_id, output_path, ...)` | Export a collection as a directory/zip with notes, fallback exports, and copied attachments |
 | `export.library(format, options)` | Export the entire library |
 | `export.list_formats()` | List available export formats |
 
@@ -150,6 +170,14 @@ bib = bridge.export.item(item_id, format="better-bibtex", options={"exportNotes"
 
 # Full collection as RIS
 ris = bridge.export.collection(collection_id, format="ris")
+
+# Importable collection package with notes and attachments
+manifest = bridge.export.collection_package(
+    collection_id,
+    "cxl-noob-export.zip",
+    zip_output=True,
+    overwrite=True,
+)
 
 # Entire library
 bib = bridge.export.library(format="better-bibtex")
@@ -174,6 +202,7 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 | Version | Date | PyPI | Notes |
 |---------|------|------|-------|
+| 0.5.0 | 2026-05-22 | [zotero-bridge-0.5.0](https://pypi.org/project/zotero-bridge/0.5.0/) | Collection package export with notes, fallback formats, attachments, and `zotero-export` CLI |
 | 0.4.0 | 2026-05-19 | [zotero-bridge-0.4.0](https://pypi.org/project/zotero-bridge/0.4.0/) | URL lookup/ingest and USENIX paper fallback |
 | 0.3.0 | 2026-05-19 | [zotero-bridge-0.3.0](https://pypi.org/project/zotero-bridge/0.3.0/) | Public lookup API and `zotero-lookup` CLI |
 | 0.2.1 | 2025-05-18 | [zotero-bridge-0.2.1](https://pypi.org/project/zotero-bridge/0.2.1/) | Fix PyPI project links |
