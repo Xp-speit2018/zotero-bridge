@@ -69,6 +69,38 @@ class ArxivPdfTests(unittest.TestCase):
         self.assertIn("addAvailableFile", bridge.calls[0])
         self.assertIn("importFromURL", bridge.calls[1])
 
+    def test_attach_file_from_url_imports_attachment(self):
+        class FakeBridge(ZoteroBridge):
+            def __init__(self):
+                self.calls = []
+
+            def _exec(self, js_code):
+                self.calls.append(js_code)
+                return {"status": "success", "method": "url-attachment", "attachmentID": 5}
+
+        bridge = FakeBridge()
+        result = bridge.attach_file_from_url(123, "https://example.com/paper.pdf")
+
+        self.assertEqual(result["status"], "success")
+        self.assertIn("Zotero.Attachments.importFromURL", bridge.calls[0])
+        self.assertIn("https://example.com/paper.pdf", bridge.calls[0])
+
+    def test_attach_file_from_path_imports_attachment(self):
+        class FakeBridge(ZoteroBridge):
+            def __init__(self):
+                self.calls = []
+
+            def _exec(self, js_code):
+                self.calls.append(js_code)
+                return {"status": "success", "method": "path-attachment", "attachmentID": 6}
+
+        bridge = FakeBridge()
+        result = bridge.attach_file_from_path(123, "/tmp/paper.pdf")
+
+        self.assertEqual(result["status"], "success")
+        self.assertIn("Zotero.Attachments.importFromFile", bridge.calls[0])
+        self.assertIn("/tmp/paper.pdf", bridge.calls[0])
+
 
 if __name__ == "__main__":
     unittest.main()

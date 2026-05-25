@@ -609,6 +609,103 @@ return (async () => {{
 """
         return self._exec(js)
 
+    def attach_file_from_url(
+        self,
+        item_id: int,
+        url: str,
+        *,
+        title: str = "Full Text PDF",
+        content_type: str = "application/pdf",
+    ) -> dict[str, Any]:
+        """Attach a file to an existing item from a direct URL."""
+        js = f"""
+return (async () => {{
+    let item = await Zotero.Items.getAsync({item_id});
+    if (!item) return {{ status: "failed", method: "url-attachment", reason: "item_not_found" }};
+    try {{
+        let attachment = await Zotero.Attachments.importFromURL({{
+            libraryID: item.libraryID,
+            url: {json.dumps(url)},
+            parentItemID: item.id,
+            title: {json.dumps(title)},
+            contentType: {json.dumps(content_type)},
+            renameIfAllowedType: true
+        }});
+        return attachment
+            ? {{
+                status: "success",
+                method: "url-attachment",
+                attachmentID: attachment.id,
+                title: attachment.getField("title"),
+                url: {json.dumps(url)}
+            }}
+            : {{
+                status: "failed",
+                method: "url-attachment",
+                url: {json.dumps(url)}
+            }};
+    }}
+    catch (e) {{
+        Zotero.logError(e);
+        return {{
+            status: "failed",
+            method: "url-attachment",
+            url: {json.dumps(url)},
+            error: String(e)
+        }};
+    }}
+}})();
+"""
+        return self._exec(js)
+
+    def attach_file_from_path(
+        self,
+        item_id: int,
+        path: str,
+        *,
+        title: str = "Full Text PDF",
+        content_type: str = "application/pdf",
+    ) -> dict[str, Any]:
+        """Attach a local file to an existing item."""
+        js = f"""
+return (async () => {{
+    let item = await Zotero.Items.getAsync({item_id});
+    if (!item) return {{ status: "failed", method: "path-attachment", reason: "item_not_found" }};
+    try {{
+        let attachment = await Zotero.Attachments.importFromFile({{
+            libraryID: item.libraryID,
+            file: {json.dumps(path)},
+            parentItemID: item.id,
+            title: {json.dumps(title)},
+            contentType: {json.dumps(content_type)}
+        }});
+        return attachment
+            ? {{
+                status: "success",
+                method: "path-attachment",
+                attachmentID: attachment.id,
+                title: attachment.getField("title"),
+                path: {json.dumps(path)}
+            }}
+            : {{
+                status: "failed",
+                method: "path-attachment",
+                path: {json.dumps(path)}
+            }};
+    }}
+    catch (e) {{
+        Zotero.logError(e);
+        return {{
+            status: "failed",
+            method: "path-attachment",
+            path: {json.dumps(path)},
+            error: String(e)
+        }};
+    }}
+}})();
+"""
+        return self._exec(js)
+
     # ------------------------------------------------------------------ #
     # Items – read / update / delete
     # ------------------------------------------------------------------ #
@@ -700,6 +797,62 @@ return (async () => {{
 """
         return self._exec(js)
 
+    def create_item(
+        self,
+        *,
+        item_type: str,
+        fields: dict[str, str],
+        creators: list[dict[str, str]] | None = None,
+        tags: list[str] | None = None,
+        collection_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
+        """Create an item from explicit metadata.
+
+        This is a fallback for research documents that do not resolve cleanly
+        through Zotero's magic wand, such as project documentation pages or
+        venue-only papers without stable identifiers.
+        """
+        collection_js = ""
+        if collection_ids:
+            cids = ",".join(str(cid) for cid in collection_ids)
+            collection_js = f"""
+    for (var cid of [{cids}]) {{
+        item.addToCollection(cid);
+    }}
+"""
+
+        js = f"""
+return (async () => {{
+    var item = new Zotero.Item({json.dumps(item_type)});
+    item.libraryID = {self._library_js()};
+    var fields = {json.dumps(fields)};
+    for (var fn of Object.keys(fields)) {{
+        if (fields[fn] !== null && fields[fn] !== undefined) {{
+            item.setField(fn, String(fields[fn]));
+        }}
+    }}
+    var creators = {json.dumps(creators or [])};
+    for (var i = 0; i < creators.length; i++) {{
+        item.setCreator(i, creators[i]);
+    }}
+    var tags = {json.dumps(tags or [])};
+    for (var tag of tags) {{
+        item.addTag(tag);
+    }}
+    {collection_js}
+    await item.saveTx();
+    return {{
+        status: "success",
+        itemID: item.id,
+        key: item.key,
+        itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+        title: item.getField("title"),
+        collections: item.getCollections()
+    }};
+}})();
+"""
+        return self._exec(js)
+
     # ------------------------------------------------------------------ #
     # Notes
     # ------------------------------------------------------------------ #
@@ -713,6 +866,43 @@ return (async () => {{
     note.parentID = {item_id};
     await note.saveTx();
     return {{ status: "success", noteID: note.id, parentID: {item_id} }};
+}})();
+"""
+        return self._exec(js)
+
+    def add_standalone_note(
+        self,
+        note_text: str,
+        collection_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
+        """Add a standalone note, optionally placing it into collections.
+
+        Standalone notes are useful for collection-level summaries and reading
+        guides. They are Zotero items without a parent, so they can be exported
+        with a collection rather than being attached to a single paper.
+        """
+        collection_js = ""
+        if collection_ids:
+            cids = ",".join(str(cid) for cid in collection_ids)
+            collection_js = f"""
+    for (var cid of [{cids}]) {{
+        note.addToCollection(cid);
+    }}
+"""
+
+        js = f"""
+return (async () => {{
+    var note = new Zotero.Item('note');
+    note.libraryID = {self._library_js()};
+    note.setNote({json.dumps(note_text)});
+    {collection_js}
+    await note.saveTx();
+    return {{
+        status: "success",
+        noteID: note.id,
+        key: note.key,
+        collections: note.getCollections()
+    }};
 }})();
 """
         return self._exec(js)
