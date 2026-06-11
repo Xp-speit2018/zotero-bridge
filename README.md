@@ -87,9 +87,26 @@ zotero-ingest --paper-url "https://www.usenix.org/conference/osdi25/presentation
 
 # Or specify venue explicitly (still normalised to DBLP convention)
 zotero-ingest --doi "10.1109/DAC63849.2025.11132862" --venue "ASPLOS" --project "MyResearch"
+
+# Documentation/webpage items bypass magic-wand identifier lookup
+zotero-ingest \
+  --webpage-url "https://doc.dpdk.org/guides/prog_guide/ring_lib.html" \
+  --title "DPDK Programmer's Guide: Ring Library" \
+  --author "DPDK Project" \
+  --project "MyResearch" \
+  --tag dpdk --tag ring-buffer
+
+# Direct PDF documentation can be attached explicitly
+zotero-ingest \
+  --webpage-url "https://doc.dpdk.org/guides/prog_guide/ring_lib.html" \
+  --title "DPDK Programmer's Guide: Ring Library" \
+  --attach-url "https://fast.dpdk.org/doc/pdf-guides/prog_guide-20.08.pdf" \
+  --project "MyResearch"
 ```
 
 Note that metadata and pdf collection uses the built-in magic wand and `Find Full Text` functionality, which maybe paywalled or not depending on your network.
+For documentation or project websites, use `--webpage-url` instead; it creates
+an explicit Zotero `webpage` item and does not try identifier/magic-wand ingest.
 
 ## CLI collection export
 
