@@ -1,0 +1,62 @@
+{
+  "status": "success",
+  "method": "zotero-web-translator",
+  "translatorID": "b97462fa-f20b-4a1e-8a73-3a434a81518b",
+  "translatorLabel": "USENIX",
+  "translatorLastUpdated": "2025-07-29 16:45:18",
+  "item": {
+    "itemType": "conferencePaper",
+    "creators": [
+      {
+        "firstName": "Zixuan",
+        "lastName": "Wang",
+        "creatorType": "author"
+      },
+      {
+        "firstName": "Xingda",
+        "lastName": "Wei",
+        "creatorType": "author"
+      },
+      {
+        "firstName": "Jinyu",
+        "lastName": "Gu",
+        "creatorType": "author"
+      },
+      {
+        "firstName": "Hongrui",
+        "lastName": "Xie",
+        "creatorType": "author"
+      },
+      {
+        "firstName": "Rong",
+        "lastName": "Chen",
+        "creatorType": "author"
+      },
+      {
+        "firstName": "Haibo",
+        "lastName": "Chen",
+        "creatorType": "author"
+      }
+    ],
+    "notes": [],
+    "tags": [],
+    "seeAlso": [],
+    "attachments": [
+      {
+        "url": "https://www.usenix.org/system/files/nsdi25-wang-zixuan.pdf",
+        "title": "Full Text PDF",
+        "mimeType": "application/pdf"
+      }
+    ],
+    "title": "ODRP: On-Demand Remote Paging with Programmable RDMA",
+    "date": "2025",
+    "conferenceName": "22nd USENIX Symposium on Networked Systems Design and Implementation (NSDI 25)",
+    "ISBN": "9781939133465",
+    "pages": "1101-1115",
+    "url": "https://www.usenix.org/conference/nsdi25/presentation/wang-zixuan",
+    "language": "en",
+    "libraryCatalog": "www.usenix.org",
+    "accessDate": "CURRENT_TIMESTAMP",
+    "shortTitle": "ODRP"
+  }
+}

@@ -49,6 +49,7 @@ class ZoteroBridge:
             Defaults to ``ZOTERO_BRIDGE_TOKEN`` env var, or ``"zotero-debug"``.
         library_id: Zotero library ID to operate on. Defaults to ``ZOTERO_LIBRARY_ID`` env var,
             or ``None`` (user's personal library).
+        request_timeout: Timeout in seconds for bridge socket operations (default 60).
     """
 
     def __init__(
@@ -56,7 +57,11 @@ class ZoteroBridge:
         base_url: str | None = None,
         token: str | None = None,
         library_id: int | None = None,
+        request_timeout: float = 60,
     ):
+        if request_timeout <= 0:
+            raise ValueError("request_timeout must be positive")
+        self.request_timeout = request_timeout
         self.base_url = (base_url or os.getenv("ZOTERO_BRIDGE_URL", "http://localhost:23120")).rstrip("/")
         self.token = token or os.getenv("ZOTERO_BRIDGE_TOKEN", "zotero-debug")
         _lid = library_id if library_id is not None else os.getenv("ZOTERO_LIBRARY_ID", "")
@@ -78,7 +83,10 @@ class ZoteroBridge:
     def _exec(self, js_code: str) -> Any:
         """POST a JS snippet to ``/debug-bridge/execute`` and return the JSON result."""
         url = f"{self.base_url}/debug-bridge/execute"
-        resp = self._session.post(url, data=js_code)
+        try:
+            resp = self._session.post(url, data=js_code, timeout=(min(10, self.request_timeout), self.request_timeout))
+        except requests.RequestException as error:
+            raise ZoteroBridgeError(f"Debug-bridge request failed: {error}") from error
 
         if not resp.ok:
             raise ZoteroBridgeError(
@@ -360,10 +368,13 @@ return (async () => {{
     ) -> dict[str, Any]:
         """Create an item from a canonical paper URL.
 
-        The primary path uses Zotero's web translators. If no translator can
-        save the item and the page exposes USENIX-style BibTeX, the method
-        falls back to parsing that BibTeX and importing the linked PDF.
+        USENIX pages use the installed USENIX web translator and native ItemSaver.
+        Other URLs use Zotero's web translators.
         """
+        from .usenix import is_usenix_paper_url
+        if is_usenix_paper_url(url):
+            return self.add_usenix_paper(url, collection_ids=collection_ids)
+
         collection_js = ""
         if collection_ids:
             cids = ",".join(str(cid) for cid in collection_ids)
@@ -377,11 +388,6 @@ return (async () => {{
 return (async () => {{
     const pageURL = {json.dumps(url)};
     const libraryID = {self._library_js()};
-
-    function absoluteURL(href) {{
-        try {{ return new URL(href, pageURL).href; }}
-        catch (e) {{ return href; }}
-    }}
 
     async function fetchPage() {{
         let resp = await Zotero.HTTP.request("GET", pageURL);
@@ -427,98 +433,123 @@ return (async () => {{
         }}
     }}
 
-    function parseBibtexFields(bibtex) {{
-        let fields = {{}};
-        let re = /([A-Za-z][A-Za-z0-9_-]*)\\s*=\\s*([{{"])([\\s\\S]*?)(?:\\2\\s*,|\\2\\s*\\n?\\}}|\\}}\\s*,)/g;
-        let m;
-        while ((m = re.exec(bibtex)) !== null) {{
-            fields[m[1].toLowerCase()] = m[3].replace(/\\s+/g, " ").trim();
-        }}
-        return fields;
-    }}
-
-    function creatorFromName(name) {{
-        name = name.trim();
-        if (!name) return null;
-        if (name.includes(",")) {{
-            let parts = name.split(",");
-            return {{ firstName: parts.slice(1).join(",").trim(), lastName: parts[0].trim(), creatorType: "author" }};
-        }}
-        let parts = name.split(/\\s+/);
-        if (parts.length === 1) return {{ lastName: parts[0], creatorType: "author" }};
-        return {{ firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1], creatorType: "author" }};
-    }}
-
-    async function tryUsenixBibtex(html) {{
-        let bibMatch = html.match(/@inproceedings\\s*\\{{[\\s\\S]*?\\n\\}}/i);
-        if (!bibMatch) return null;
-        let fields = parseBibtexFields(bibMatch[0]);
-        if (!fields.title) return null;
-
-        let item = new Zotero.Item("conferencePaper");
-        item.libraryID = libraryID;
-        item.setField("title", fields.title);
-        item.setField("url", fields.url || pageURL);
-        item.setField("proceedingsTitle", fields.booktitle || "");
-        item.setField("conferenceName", fields.booktitle || "");
-        item.setField("date", fields.year || "");
-        item.setField("pages", fields.pages || "");
-        item.setField("ISBN", fields.isbn || "");
-        item.setField("place", fields.address || "");
-        item.setField("publisher", fields.publisher || "USENIX Association");
-        item.setField("extra", "USENIX: " + pageURL.replace(/^https?:\\/\\/www\\.usenix\\.org\\/conference\\//, ""));
-        if (fields.author) {{
-            let authors = fields.author.split(/\\s+and\\s+/i).map(creatorFromName).filter(Boolean);
-            for (let i = 0; i < authors.length; i++) {{
-                item.setCreator(i, authors[i]);
-            }}
-        }}
-        {collection_js}
-        await item.saveTx();
-
-        let pdfURL = null;
-        let pdfMatch = html.match(/href=["']([^"']+\\.pdf(?:\\?[^"']*)?)["']/i);
-        if (pdfMatch) {{
-            pdfURL = absoluteURL(pdfMatch[1]);
-            try {{
-                let att = await Zotero.Attachments.importFromURL({{
-                    libraryID: libraryID,
-                    url: pdfURL,
-                    parentItemID: item.id,
-                    title: "Full Text PDF",
-                    contentType: "application/pdf",
-                    referrer: pageURL,
-                    renameIfAllowedType: true
-                }});
-            }}
-            catch (e) {{
-                Zotero.logError(e);
-            }}
-        }}
-
-        return {{
-            status: "success",
-            method: "usenix-bibtex",
-            itemID: item.id,
-            key: item.key,
-            title: item.getField("title"),
-            url: item.getField("url"),
-            pdfURL: pdfURL
-        }};
-    }}
-
     let html = await fetchPage();
     let translated = await tryWebTranslator(html);
     if (translated && translated.status === "success") return translated;
-    let fallback = await tryUsenixBibtex(html);
-    if (fallback) {{
-        fallback.translator_result = translated;
-        return fallback;
-    }}
     return translated || {{ status: "not_found", url: pageURL }};
 }})();
 """
         return self._exec(js)
+
+    def add_usenix_paper(
+        self, url: str, collection_ids: list[int] | None = None, *, download_pdf: bool = True,
+    ) -> dict[str, Any]:
+        """Import/reuse a USENIX paper using Zotero's official web translator."""
+        from .usenix import UsenixClient
+        with UsenixClient(bridge=self) as client:
+            return client.ingest_paper(self, client.get_paper(url), collection_ids=collection_ids,
+                                       download_pdf=download_pdf)
+
+    def translate_usenix_paper(self, url: str) -> dict[str, Any]:
+        """Preview the installed USENIX web translator without saving anything.
+
+        The official translator fetches its own document, so a wrapped empty
+        document supplies its URL without a duplicate HTTP fetch in the SDK.
+        """
+        from .usenix import USENIX_TRANSLATOR_ID, canonical_paper_url
+        url = canonical_paper_url(url)
+        js = f"""
+return (async () => {{
+    const pageURL = {json.dumps(url)};
+    const translatorID = {json.dumps(USENIX_TRANSLATOR_ID)};
+    const translator = await Zotero.Translators.get(translatorID);
+    if (!translator) return {{status: "failed", reason: "usenix_translator_unavailable", translatorID}};
+    try {{
+        const doc = Zotero.HTTP.wrapDocument(
+            new DOMParser().parseFromString("<html><head></head><body></body></html>", "text/html"), pageURL);
+        const translate = new Zotero.Translate.Web();
+        translate.setDocument(doc);
+        translate.setTranslator(translator);
+        const items = await translate.translate({{libraryID: false, saveAttachments: false}});
+        if (items.length !== 1) return {{status: "failed", reason: "expected_one_paper", count: items.length, translatorID}};
+        const omitDocuments = (key, value) => key === "document" ? undefined : value;
+        const item = JSON.parse(JSON.stringify(items[0], omitDocuments));
+        item.attachments = (items[0].attachments || []).map(attachment => {{
+            const copy = JSON.parse(JSON.stringify(attachment, omitDocuments));
+            if (!copy.url && attachment.document) copy.url = attachment.document.location?.href || pageURL;
+            return copy;
+        }});
+        return {{status: "success", method: "zotero-web-translator", translatorID,
+            translatorLabel: translator.label, translatorLastUpdated: translator.lastUpdated, item}};
+    }} catch (error) {{
+        return {{status: "failed", reason: "usenix_translation_failed", translatorID, error: String(error)}};
+    }}
+}})();
+"""
+        return self._exec(js)
+
+    def save_translated_item(
+        self, item: dict[str, Any], collection_ids: list[int] | None = None, *, save_attachments: bool = True,
+    ) -> dict[str, Any]:
+        """Save a translator's complete JSON via Zotero's native ItemSaver.
+
+        Creators, fields, tags and notes remain in the translator's format.
+        Attachment saving follows Zotero's associated-file/snapshot preferences.
+        """
+        if not item.get("itemType"):
+            raise ValueError("A translated item must include itemType")
+        js = f"""
+return (async () => {{
+    const translated = {json.dumps(item)};
+    const saveAttachments = {json.dumps(save_attachments)};
+    if (!saveAttachments) translated.attachments = [];
+    const errors = [];
+    const saver = new Zotero.Translate.ItemSaver({{
+        libraryID: {self._library_js()},
+        collections: {json.dumps(collection_ids or [])},
+        attachmentMode: saveAttachments ? Zotero.Translate.ItemSaver.ATTACHMENT_MODE_DOWNLOAD
+            : Zotero.Translate.ItemSaver.ATTACHMENT_MODE_IGNORE,
+        forceTagType: 1, referrer: translated.url,
+        saveOptions: {{skipSelect: true}}
+    }});
+    const saved = await saver.saveItems([translated], (attachment, progress, error) => {{
+        if (progress === false || error) errors.push({{url: attachment.url, error: String(error || "attachment_save_failed")}});
+    }});
+    const item = saved.find(candidate => candidate.isRegularItem());
+    if (!item) return {{status: "failed", method: "zotero-item-saver", reason: "no_saved_paper"}};
+    const attachments = [];
+    for (const id of item.getAttachments()) {{
+        const attachment = await Zotero.Items.getAsync(id);
+        if (!attachment) continue;
+        const isFile = attachment.isFileAttachment();
+        attachments.push({{id, url: attachment.getField("url"), contentType: attachment.attachmentContentType,
+            fileExists: isFile ? await attachment.fileExists() : false}});
+    }}
+    return {{status: "success", method: "zotero-item-saver", itemID: item.id, key: item.key,
+        title: item.getField("title"), url: item.getField("url"), collections: item.getCollections(),
+        attachments, attachment_errors: errors}};
+}})();
+"""
+        return self._exec(js)
+
+    def attach_usenix_pdf(self, item_id: int) -> dict[str, Any]:
+        """Resolve an existing item's USENIX page and attach its public paper PDF."""
+        from .usenix import UsenixClient, is_usenix_paper_url
+        item = self.get_item(item_id)
+        url = (item or {}).get("url", "")
+        if not is_usenix_paper_url(url):
+            return {"status": "failed", "method": "usenix", "reason": "no_usenix_url"}
+        with UsenixClient(bridge=self) as client:
+            paper = client.get_paper(url)
+            if not paper.pdf_url:
+                return {"status": "failed", "method": "usenix", "reason": "no_public_pdf"}
+            for attachment in self.get_attachments(item_id):
+                if (attachment.get("url") == paper.pdf_url and attachment.get("fileExists")
+                        and attachment.get("contentType") == "application/pdf"):
+                    return {"status": "success", "method": "usenix", "attachmentID": attachment["id"], "action": "existing"}
+            client._check_robots(paper.pdf_url)
+            client._pace()
+            return {**self.attach_file_from_url(item_id, paper.pdf_url), "method": "usenix"}
 
     def find_fulltext(self, item_id: int) -> dict[str, Any]:
         """Attempt to download the PDF for an existing item.
@@ -526,6 +557,14 @@ return (async () => {{
         Returns a dict such as ``{"status": "success", "attachmentID": 123}``
         or ``{"status": "failed"}``.
         """
+        from .usenix import UsenixError, is_usenix_paper_url
+        item = self.get_item(item_id)
+        if is_usenix_paper_url((item or {}).get("url", "")):
+            try:
+                return self.attach_usenix_pdf(item_id)
+            except UsenixError as error:
+                return {"status": "failed", "method": "usenix", "error": str(error)}
+
         js = f"""
 return (async () => {{
     let item = await Zotero.Items.getAsync({item_id});
@@ -938,13 +977,17 @@ return (async () => {{
     var atts = [];
     for (var aid of attIDs) {{
         var a = await Zotero.Items.getAsync(aid);
+        if (!a) continue;
+        var isFile = a.isFileAttachment();
         atts.push({{
             id: a.id,
             key: a.key,
             title: a.getField("title"),
             contentType: a.attachmentContentType,
-            path: a.getFilePath(),
-            filename: a.attachmentFilename,
+            url: a.getField("url"),
+            fileExists: isFile ? await a.fileExists() : false,
+            path: isFile ? a.getFilePath() : null,
+            filename: isFile ? a.attachmentFilename : null,
         }});
     }}
     return atts;

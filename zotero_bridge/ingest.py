@@ -28,6 +28,7 @@ from typing import Any
 
 from .client import ZoteroBridge, ZoteroBridgeError
 from .dblp import normalize_venue_name
+from .usenix import UsenixError
 
 
 def ingest(
@@ -47,60 +48,75 @@ def ingest(
     """
     result: dict[str, Any] = {"identifier": identifier, "id_type": id_type}
 
-    # 1. Duplication check
-    dup = bridge.check_duplicate(identifier, id_type)
-    result["duplicate_check"] = dup
-
-    item_id: int | None = None
-    item_key: str | None = None
-
-    if dup.get("found"):
-        item_id = dup["itemID"]
-        item_key = dup.get("key")
-        result["action"] = "existing"
-        print(f"[ingest] Item already exists (ID={item_id}, key={item_key})")
-    else:
-        if id_type.lower() == "title":
-            result["action"] = "failed"
-            result["reason"] = "title_lookup_only"
-            print(
-                "[ingest] Title lookup found no existing item. "
-                "Use --doi/--arxiv/--isbn/--paper-url for paper ingest, "
-                "or --webpage-url with --title for documentation/webpage items.",
-                file=sys.stderr,
-            )
-            return result
-
-        # 2. Fetch metadata
-        print(f"[ingest] Identifier not found — fetching metadata for {identifier} ...")
-        added = bridge.add_by_identifier(identifier, id_type)
+    from .usenix import is_usenix_paper_url
+    usenix_url = id_type.lower() in {"url", "paper-url", "paper_url"} and is_usenix_paper_url(identifier)
+    if usenix_url:
+        # USENIX requires exact URL deduplication and the selected paper PDF,
+        # even when the existing item already has a slides PDF attachment.
+        added = bridge.add_usenix_paper(identifier)
         result["add_result"] = added
-
         if added.get("status") != "success":
-            result["action"] = "failed"
-            print(f"[ingest] Failed to add item: {added}", file=sys.stderr)
+            result.update({"action": "failed", "reason": "usenix_import_failed"})
             return result
-
-        item_id = added["itemID"]
-        item_key = added.get("key")
-        result["action"] = "created"
-        print(f"[ingest] Created item (ID={item_id}, key={item_key})")
-
-
-    # 3. Fetch PDF when missing. This also covers URL-identified papers that
-    # already existed in Zotero but had only a webpage/biburl attachment.
-    existing_pdf = bridge.retrieve_pdf(item_id)
-    result["existing_pdf"] = existing_pdf
-    if existing_pdf:
-        print(f"[ingest] PDF already attached (attachmentID={existing_pdf.get('attachmentID')})")
+        item_id, item_key = added["itemID"], added.get("key")
+        result["action"] = added["action"]
+        result["duplicate_check"] = {"found": added["action"] == "existing"}
+        result["pdf_status"] = added["pdf_status"]
     else:
-        print(f"[ingest] Attempting to retrieve PDF ...")
-        ft = bridge.find_fulltext(item_id)
-        result["fulltext_result"] = ft
-        if ft.get("status") == "success":
-            print(f"[ingest] PDF attached (attachmentID={ft.get('attachmentID')})")
+        # 1. Duplication check
+        dup = bridge.check_duplicate(identifier, id_type)
+        result["duplicate_check"] = dup
+
+        item_id: int | None = None
+        item_key: str | None = None
+
+        if dup.get("found"):
+            item_id = dup["itemID"]
+            item_key = dup.get("key")
+            result["action"] = "existing"
+            print(f"[ingest] Item already exists (ID={item_id}, key={item_key})")
         else:
-            print(f"[ingest] No PDF found automatically")
+            if id_type.lower() == "title":
+                result["action"] = "failed"
+                result["reason"] = "title_lookup_only"
+                print(
+                    "[ingest] Title lookup found no existing item. "
+                    "Use --doi/--arxiv/--isbn/--paper-url for paper ingest, "
+                    "or --webpage-url with --title for documentation/webpage items.",
+                    file=sys.stderr,
+                )
+                return result
+
+            # 2. Fetch metadata
+            print(f"[ingest] Identifier not found — fetching metadata for {identifier} ...")
+            added = bridge.add_by_identifier(identifier, id_type)
+            result["add_result"] = added
+
+            if added.get("status") != "success":
+                result["action"] = "failed"
+                print(f"[ingest] Failed to add item: {added}", file=sys.stderr)
+                return result
+
+            item_id = added["itemID"]
+            item_key = added.get("key")
+            result["action"] = "created"
+            print(f"[ingest] Created item (ID={item_id}, key={item_key})")
+
+
+        # 3. Fetch PDF when missing. This also covers URL-identified papers that
+        # already existed in Zotero but had only a webpage/biburl attachment.
+        existing_pdf = bridge.retrieve_pdf(item_id)
+        result["existing_pdf"] = existing_pdf
+        if existing_pdf:
+            print(f"[ingest] PDF already attached (attachmentID={existing_pdf.get('attachmentID')})")
+        else:
+            print(f"[ingest] Attempting to retrieve PDF ...")
+            ft = bridge.find_fulltext(item_id)
+            result["fulltext_result"] = ft
+            if ft.get("status") == "success":
+                print(f"[ingest] PDF attached (attachmentID={ft.get('attachmentID')})")
+            else:
+                print(f"[ingest] No PDF found automatically")
 
     # 4. Resolve venue name (DBLP-style) -----------------------------
     if not venue:
@@ -303,13 +319,13 @@ def main(argv: list[str] | None = None) -> int:
             venue=args.venue,
             project=args.project,
         )
-        if result.get("action") == "failed":
+        if result.get("action") == "failed" or result.get("pdf_status") in {"failed", "unavailable"}:
             return 1
         print("\n[ingest] Done.")
         return 0
-    except ZoteroBridgeError as e:
+    except (ZoteroBridgeError, UsenixError) as e:
         print(f"[ingest] Error: {e}", file=sys.stderr)
-        if e.response_text:
+        if getattr(e, "response_text", None):
             print(f"[ingest] Response: {e.response_text}", file=sys.stderr)
         return 1
 

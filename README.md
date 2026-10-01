@@ -13,7 +13,8 @@ Python SDK for the [Zotero debug-bridge](https://github.com/retorquere/zotero-be
 pip install zotero-bridge
 ```
 
-Or from source:
+For the USENIX conference CLI and native-translator APIs in this checkout,
+install from source:
 
 ```bash
 git clone https://github.com/Xp-speit2018/zotero-bridge.git
@@ -104,9 +105,151 @@ zotero-ingest \
   --project "MyResearch"
 ```
 
-Note that metadata and pdf collection uses the built-in magic wand and `Find Full Text` functionality, which maybe paywalled or not depending on your network.
+Most scholarly identifiers use the built-in magic wand and `Find Full Text`
+functionality, which may depend on publisher access. USENIX paper URLs use the
+installed USENIX web translator and native ItemSaver, matching the Chrome
+Connector workflow. See [USENIX conference downloads](#usenix-conference-downloads)
+for batch downloads and collection imports.
 For documentation or project websites, use `--webpage-url` instead; it creates
 an explicit Zotero `webpage` item and does not try identifier/magic-wand ingest.
+
+## USENIX conference downloads
+
+Automate OSDI, NSDI and other USENIX events while reusing Zotero's existing
+translation and save infrastructure:
+
+```text
+technical sessions → presentation URL → USENIX / Embedded Metadata translator
+                                   → native item JSON → local PDF download
+                                                      → ItemSaver → collection + attachments
+```
+
+`UsenixClient` discovers presentation URLs from official technical sessions and
+uses Zotero's installed **USENIX web translator**, the same translator used by
+the Chrome Connector. That translator delegates to Zotero's Embedded Metadata
+translator. The SDK keeps its complete item JSON, including creators, fields,
+notes, tags and attachment URLs. It does not parse citation tags or BibTeX,
+split author names, guess PDF filenames or rank page links itself.
+
+`get_paper()` runs `Zotero.Translate.Web` with `libraryID: false`, which reads
+metadata without saving items. New imports pass that JSON to Zotero's native
+`Translate.ItemSaver`, with the requested collection IDs. Zotero saves metadata
+and downloads attachments using its associated-file and snapshot preferences.
+Exact URL/DOI matches are reused; missing PDFs on existing items are repaired
+using the translator's PDF URL. A missing or failed translator is recorded as
+an error rather than falling back to independently assembled metadata.
+
+A running Zotero instance with debug-bridge and the USENIX translator is required
+for metadata resolution, including local `download` runs. `list` and ingestion
+preview only enumerate URLs and do not require Zotero. Translator updates come
+from Zotero; the SDK does not ship a separate copy. The adapter supports modern
+`/conference/<event>/presentation/...` and older
+`/conference/<event>/technical-sessions/presentation/...` URLs. Native translation
+has been checked against OSDI 2026, NSDI 2025 and OSDI 2012 samples. Pre-Drupal
+`static.usenix.org/events/...` archives require a separate adapter.
+
+```bash
+# List presentation candidates as JSON (no PDF downloads or Zotero writes)
+zotero-usenix list --event osdi25 --event nsdi25
+
+# Download both conferences; progress and SHA-256 digests go into state.json
+zotero-usenix download --conference OSDI --conference NSDI --year 2025 \
+  --output usenix-papers
+
+# Download ten pending papers; repeat the identical command to continue
+zotero-usenix download --event osdi25 --event nsdi25 \
+  --output usenix-papers --limit 10
+
+# Multiple years can be requested with repeated --year flags
+zotero-usenix download --conference OSDI --year 2024 --year 2025 \
+  --output usenix-papers
+
+# Preview Zotero ingestion, then explicitly run it
+zotero-usenix ingest --event osdi25 --project Systems
+zotero-usenix ingest --event osdi25 --event nsdi25 --project Systems --run --limit 10
+```
+
+Ingestion adds each item to its event collection (for example, `osdi2025` or
+`nsdi2025`) and optionally to the `--project` collection. New items are saved
+with those collection IDs; matching existing items are added to the collections
+and their paper PDF is checked. Existing metadata is retained. The generic
+`zotero-ingest --paper-url` command also uses this USENIX path.
+
+The SDK checks the official `robots.txt` and waits at least ten seconds between
+its USENIX operations (or a larger declared crawl delay). Zotero handles requests
+made inside translators and ItemSaver. For SDK catalogue and local PDF requests,
+socket timeouts and retries are bounded, and transient HTTP errors and 429
+responses honor `Retry-After`. Each locally downloaded PDF must have a PDF header
+and EOF marker, and match `Content-Length` when supplied without content encoding.
+Only then is it atomically moved into place. The manifest records the full native
+item, translator ID/update date, source URLs, download paths, SHA-256 digests and
+errors. Repeated download runs verify completed files and repair missing/corrupt
+files. Resumption is at paper granularity.
+
+Run one serial worker per manifest. `--refresh` re-fetches catalogues and runs the
+installed translator again, which is useful after a translator update or an
+event releases PDFs or replaces preprints. Records produced by the earlier
+custom metadata parser are automatically translated again before reuse.
+Without `--refresh`, resolved records with a PDF link and conference catalogues
+are cached. Records without a public PDF are resolved again on the next run.
+Presentations the translator does not identify as conference papers are skipped
+as talks. `list` reports presentation candidates; paper metadata is validated during download/ingest.
+`download` and `ingest --run` save progress after each paper and continue past
+individual failures. They return a nonzero exit status for failures/unavailable
+PDFs, and 130 after Ctrl-C. Ingestion verifies the selected URL's attachment
+exists in Zotero; a slides attachment does not satisfy paper PDF availability.
+Metadata success is reported separately from `pdf_status`:
+
+| `pdf_status` | Meaning |
+|--------------|---------|
+| `downloaded` | A paper PDF was saved in this import |
+| `existing` | The matching paper PDF already exists |
+| `unavailable` | The translator did not supply a public paper PDF |
+| `failed` | Metadata may have been saved, but the PDF was not saved successfully |
+| `not_requested` | `download_pdf=False` was used |
+
+Use `--bridge-url` or `ZOTERO_BRIDGE_URL` to select the bridge endpoint, and
+`--timeout` to adjust socket timeouts (default 60 seconds). On an interrupted
+import, rerunning checks the library for an exact match before saving again.
+
+Talks and verified completed files do not consume `--limit`. Known talks are
+cached until `--refresh`. Across all requested events, pending papers are given
+a first pass before failed/unavailable records are retried, so one inaccessible
+paper cannot keep a small batch from advancing to another conference.
+
+```python
+from zotero_bridge import UsenixClient, ZoteroBridge
+
+bridge = ZoteroBridge(request_timeout=60)
+url = "https://www.usenix.org/conference/nsdi25/presentation/wang-zixuan"
+collection = bridge.get_or_create_collection("nsdi2025")
+
+# Read metadata once, then download locally and save into a collection.
+with UsenixClient(bridge=bridge) as client:
+    paper = client.get_paper(url)  # Does not save any library items
+    downloaded = client.download_pdf(paper, "usenix-papers")
+    result = client.ingest_paper(bridge, paper, collection_ids=[collection["id"]])
+    print(paper.title, downloaded["path"], result["itemID"], result["pdf_status"])
+
+# One-call collection import; repeated calls reuse exact URL/DOI matches.
+result = bridge.add_usenix_paper(url, collection_ids=[collection["id"]])
+
+# Low-level preview exposes the complete translator JSON.
+translated = bridge.translate_usenix_paper(url)
+if translated["status"] == "success":
+    print(translated["translatorID"], translated["item"]["creators"])
+# save_translated_item() saves directly; add_usenix_paper() also deduplicates.
+```
+
+Official sources: [OSDI 2025 technical sessions](https://www.usenix.org/conference/osdi25/technical-sessions),
+[NSDI 2025 technical sessions](https://www.usenix.org/conference/nsdi25/technical-sessions),
+[an NSDI paper with final/prepublication/slide media](https://www.usenix.org/conference/nsdi25/presentation/wang-zixuan),
+[USENIX robots.txt](https://www.usenix.org/robots.txt),
+[Zotero's USENIX translator](https://github.com/zotero/translators/blob/master/USENIX.js),
+and [Zotero's native ItemSaver](https://github.com/zotero/zotero/blob/main/chrome/content/zotero/xpcom/translation/translate_item.js).
+USENIX states that papers/proceedings become freely available when the event
+begins. Attendee-only ZIP archives and unreleased PDFs are not prerequisites for
+this workflow.
 
 ## CLI collection export
 
@@ -136,7 +279,12 @@ Zotero client can import `collection.rdf` together with the adjacent files.
 | `lookup(identifier, id_type, include_notes=False, include_attachments=False, first_only=False)` | Look up Zotero items by DOI / ISBN / arXiv / URL / title |
 | `check_duplicate(identifier, id_type)` | Backward-compatible first-match duplicate check |
 | `add_by_identifier(identifier, id_type)` | Magic wand ingest |
-| `find_fulltext(item_id)` | Auto-download PDF, with deterministic arXiv PDF fallback |
+| `add_by_url(url, collection_ids=None)` | Paper-page ingest; USENIX URLs use the USENIX adapter |
+| `translate_usenix_paper(url)` | Read metadata/attachment URLs with the installed official USENIX translator, without saving |
+| `save_translated_item(item, collection_ids=None, save_attachments=True)` | Save complete translator JSON and attachments with native ItemSaver; no deduplication |
+| `add_usenix_paper(url, collection_ids=None, download_pdf=True)` | Translate, reuse exact URL/DOI matches, or save via native ItemSaver into collections |
+| `attach_usenix_pdf(item_id)` | Resolve the item's USENIX page and repair/reuse its paper PDF |
+| `find_fulltext(item_id)` | USENIX paper resolution or native PDF lookup with arXiv fallback |
 | `attach_arxiv_pdf(item_id, arxiv_id=None)` | Attach `https://arxiv.org/pdf/<id>` when an item has arXiv metadata |
 | `get_item(item_id)` | Retrieve metadata |
 | `delete_item(item_id)` | Trash an item |
@@ -215,6 +363,26 @@ A curated mapping of 50+ common venues + DBLP API fallback + local cache handles
 
 - Python ≥ 3.10
 - A running Zotero instance with the [debug-bridge extension](https://github.com/retorquere/zotero-better-bibtex/releases/tag/debug-bridge) installed
+
+## Development and validation
+
+Run the offline test suite from a source checkout:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Node.js enables the tests that execute generated bridge JavaScript; those tests
+are skipped when Node is unavailable. The suite currently has 56 tests covering
+native metadata preservation, ItemSaver inputs, duplicate reuse, attachment
+repair, local PDF validation, rate limits, cache migration and batch resumption.
+
+Live validation on 2026-09-30 used Zotero 9.0.6 and the installed USENIX translator
+(updated 2025-07-29). OSDI 2026, NSDI 2025 and OSDI 2012 samples translated
+successfully, and OSDI/NSDI 2026 keynotes without papers were skipped. An NSDI
+ODRP paper was saved into a designated validation collection with all six authors
+and its PDF; repeating the import reused the same item and attachment. Local CLI
+resumption also upgraded a legacy metadata cache and retained its verified PDF.
 
 ## Releases
 

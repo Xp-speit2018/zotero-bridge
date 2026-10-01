@@ -39,6 +39,7 @@ dev = [
 zotero-ingest = "zotero_bridge.ingest:main"
 zotero-lookup = "zotero_bridge.lookup:main"
 zotero-export = "zotero_bridge.export_cli:main"
+zotero-usenix = "zotero_bridge.usenix_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Xp-speit2018/zotero-bridge"
