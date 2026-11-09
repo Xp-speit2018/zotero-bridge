@@ -388,6 +388,8 @@ resumption also upgraded a legacy metadata cache and retained its verified PDF.
 
 | Version | Date | PyPI | Notes |
 |---------|------|------|-------|
+| 0.5.3 | 2026-11-09 | [zotero-bridge-0.5.3](https://pypi.org/project/zotero-bridge/0.5.3/) | Add native Zotero USENIX paper translation, PDF attachment, and `zotero-usenix` CLI |
+| 0.5.2 | 2026-06-12 | [zotero-bridge-0.5.2](https://pypi.org/project/zotero-bridge/0.5.2/) | Add webpage ingestion workflow |
 | 0.5.1 | 2026-05-22 | [zotero-bridge-0.5.1](https://pypi.org/project/zotero-bridge/0.5.1/) | Add deterministic arXiv PDF attachment fallback for ingest/full-text lookup |
 | 0.5.0 | 2026-05-22 | [zotero-bridge-0.5.0](https://pypi.org/project/zotero-bridge/0.5.0/) | Collection package export with notes, fallback formats, attachments, and `zotero-export` CLI |
 | 0.4.0 | 2026-05-19 | [zotero-bridge-0.4.0](https://pypi.org/project/zotero-bridge/0.4.0/) | URL lookup/ingest and USENIX paper fallback |
